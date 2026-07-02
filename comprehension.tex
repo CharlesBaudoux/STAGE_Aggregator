@@ -1,0 +1,119 @@
+\documentclass[11pt, a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{geometry}
+\geometry{hmargin=2.5cm, vmargin=3cm}
+\usepackage[hidelinks]{hyperref}
+
+\title{Notes d'analyse : Projet JGrapa}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+\newpage
+
+\section{Compréhension du projet}
+
+\subsection{Objectif principal}
+Le projet JGrapa (Java Grade Parser) est un moteur de modélisation et de calcul de notes. Son objectif fondamental est de séparer strictement le stockage des données d'évaluation (les notes brutes et les commentaires) de la logique de calcul (le barème et les règles mathématiques). Cette séparation permet d'appliquer différentes stratégies d'évaluation sur une même copie sans jamais altérer la structure des notes d'origine.
+
+\subsection{Caractéristiques fondamentales}
+Le fonctionnement de JGrapa repose sur les principes et contraintes suivants :
+
+\begin{itemize}
+    \item \textbf{Découplage :} La donnée de l'étudiant (\textit{Assessment}) et la méthode de calcul du professeur (\textit{Aggregator}) sont deux entités indépendantes. Elles ne sont réunies qu'au niveau final (\textit{Exam}) pour produire un résultat.
+    \item \textbf{Structure en arborescence :} Les évaluations sont organisées sous forme d'arbre. Cette disposition (dossiers, sous-dossiers, matières) sert à regrouper les notes de manière logique, avant même de définir comment elles seront calculées.
+    \item \textbf{Bornes mathématiques strictes :} Une note valide est toujours un nombre décimal compris entre -1.0 et 1.0. Les poids (coefficients) doivent être positifs et leur somme locale ne doit jamais dépasser 1.0 (à une marge de tolérance informatique de $10^{-9}$ près).
+    \item \textbf{Multiplicité des algorithmes de calcul :} Le moteur ne se limite pas à la moyenne pondérée classique. Il gère :
+    \begin{itemize}
+        \item Des pondérations statiques (coefficients fixes par matière).
+        \item Des pondérations basées sur le rang/tri de l'étudiant (algorithme OWA - par exemple, donner plus de poids à la meilleure note).
+        \item Des pondérations conditionnelles (algorithme paramétrique - où la note d'un critère influence le coefficient des autres).
+    \end{itemize}
+    \item \textbf{Persistance par schémas :} L'importation et l'exportation des barèmes et des copies s'effectuent via des fichiers JSON. La validité de ces fichiers est garantie par des JSON Schemas stricts qui vérifient la conformité des données avant leur traitement en mémoire.
+    \item \textbf{Immutabilité :} Les structures de données créées (arbres de notes, dictionnaires de coefficients) sont scellées et non modifiables une fois instanciées.
+\end{itemize}
+
+
+\section{Dossier Assessment : Structure des évaluations}
+
+Ce module gère exclusivement le stockage et l'organisation en mémoire des notes brutes et des retours textuels, sans intégrer aucune logique de calcul.
+
+\subsection{Analyse des fichiers et des classes}
+
+\begin{itemize}
+    \item \textbf{\texttt{Mark.java} :} C'est l'unité de notation. Il s'agit d'un \textit{record} (une structure de données purement porteuse de variables) qui encapsule une valeur de type \texttt{double}. Sa règle de construction est stricte : la note doit obligatoirement se situer dans l'intervalle $[-1.0, 1.0]$. La classe inclut des méthodes pour instancier rapidement la note maximale (\texttt{max()}) ou minimale (\texttt{min()}).
+    
+    \item \textbf{\texttt{AssessmentTree.java} :} C'est le contrat de base de l'arborescence. Il s'agit d'une interface scellée (\textit{sealed interface}). Elle verrouille la structure de l'arbre en n'autorisant que deux implémentations possibles et définitives : \texttt{Assessment} (la feuille) et \texttt{CompositeAssessmentTree} (le nœud).
+    
+    \item \textbf{\texttt{Assessment.java} :} Il s'agit d'une implémentation de \texttt{AssessmentTree}. Elle représente la fin d'une branche de l'arbre (la copie corrigée). Cette classe stocke exactement deux informations indissociables : un objet \texttt{Mark} (la note numérique) et un \texttt{String} (le \texttt{feedback} ou commentaire de correction). Si le correcteur ne fournit pas de texte, le système force une chaîne de caractères vide par sécurité.
+    
+    \item \textbf{\texttt{CompositeAssessmentTree.java} :} Il s'agit de la seconde implémentation de \texttt{AssessmentTree}. Elle représente un regroupement ou un dossier (par exemple, "Semestre 1" ou "Pôle Scientifique"). Contrairement à \texttt{Assessment}, elle ne contient ni note ni commentaire. Elle possède un unique attribut : un dictionnaire immuable (\texttt{ImmutableMap}) qui associe des clés de type \texttt{Criterion} (le nom de la matière) à des valeurs de type \texttt{AssessmentTree} (les enfants du dossier).
+    
+    \item \textbf{\texttt{AssessmentTreeJsonConverter.java} :} Elle contient les instructions pour transformer les objets Java de ce dossier en une chaîne de texte JSON (sérialisation), et l'inverse (désérialisation). Elle s'appuie sur le schéma \texttt{assessment-tree.schema.json} pour valider le format des données entrantes avant d'autoriser la création des objets en mémoire.
+\end{itemize}
+
+\subsection{Liens et architecture}
+
+La mécanique interne fonctionne par récursivité, articulée autour de l'interface parent \texttt{AssessmentTree}. Un objet \texttt{CompositeAssessmentTree} ignore la nature exacte de ses enfants. Son dictionnaire pointe vers des \texttt{AssessmentTree} génériques. 
+
+Concrètement, l'enfant associé à un critère dans le dictionnaire peut être soit une évaluation finale (\texttt{Assessment}), soit un autre sous-dossier (\texttt{CompositeAssessmentTree}). Ce système permet de construire des arbres de n'importe quelle profondeur et asymétrique. 
+
+La chaîne de dépendance est descendante : la validité d'un arbre \texttt{CompositeAssessmentTree} dépend de la validité de ses branches, qui doivent toutes inévitablement se terminer par des feuilles de type \texttt{Assessment}. Celles-ci dépendent à leur tour de la conformité de l'objet \texttt{Mark} qu'elles contiennent.
+
+
+\section{Dossier Aggregator : Stratégies de calcul}
+
+Ce module est exclusivement dédié à la logique mathématique. Il définit les règles de pondération appliquées aux notes. Il ne stocke aucune donnée d'évaluation.
+
+\subsection{Analyse des fichiers et des classes}
+
+\begin{itemize}
+    \item \textbf{\texttt{Aggregator.java} :} Classe abstraite scellée servant de contrat de base pour toutes les méthodes de calcul. Elle autorise uniquement trois implémentations : \texttt{Weighter}, \texttt{Owa} et \texttt{Parametric}. Elle gère la structure de l'arbre de calcul via un dictionnaire de sous-agrégateurs (\texttt{subs}) et un agrégateur par défaut (\texttt{defaultSub}).
+    
+    \item \textbf{\texttt{Aggregator.WeightedMarks} :} Classe interne statique qui associe une copie aplatie (\texttt{OneLevelMarksTree}) à un dictionnaire de poids dynamiques. Son constructeur valide trois conditions strictes : poids finis, poids positifs, et somme des poids n'excédant pas 1.0 (à la tolérance $10^{-9}$ près). Elle expose la méthode \texttt{weightedSum()} qui exécute l'opération mathématique.
+
+    \item \textbf{\texttt{Weighter.java} :} Implémentation de la moyenne pondérée statique. Les poids sont fixés à l'avance pour chaque critère. Si une copie d'étudiant ne contient pas tous les critères prévus par le barème, la classe recalcule les poids restants pour répartir la proportion manquante sur les notes présentes, maintenant ainsi un total de 1.0.
+
+    \item \textbf{\texttt{Owa.java} :} Implémentation de la méthode \textit{Ordered Weighted Averaging}. Les poids ne sont pas associés à des critères, mais à un rang de classement. La classe trie les notes de l'étudiant de manière décroissante avant d'appliquer les coefficients. Elle inclut une logique d'ajustement (duplication ou filtrage) si le nombre de notes diffère du nombre de poids fournis.
+
+    \item \textbf{\texttt{Parametric.java} :} Implémentation d'un barème conditionnel liant deux critères spécifiques : un critère à multiplier (\texttt{multiplied}) et un critère de pondération (\texttt{weighting}). La note obtenue au critère de pondération écrase et détermine la valeur du coefficient appliqué au critère multiplié et répartit le reste du poids sur les matières annexes.
+
+    \item \textbf{\texttt{AggregatorJsonConverter.java} :} Utilitaire de sérialisation et de désérialisation. Il instancie les objets \texttt{Aggregator} à partir de fichiers JSON et vérifie leur intégrité syntaxique à l'aide du schéma \texttt{aggregator.schema.json}.
+\end{itemize}
+
+\subsection{Liens et architecture interne du module}
+
+L'architecture du module repose sur le patron de conception \textbf{Stratégie}. La classe mère \texttt{Aggregator} délègue la création des coefficients à ses classes filles. 
+
+Le comportement interne est uniformisé : chaque classe (\texttt{Weighter}, \texttt{Owa}, \texttt{Parametric}) implémente la méthode abstraite \texttt{aggregate(OneLevelMarksTree)}. La tâche de cette méthode n'est pas de calculer la moyenne finale, mais de générer un dictionnaire de coefficients (statiques ou recalculés dynamiquement) correspondant aux notes de l'étudiant. 
+
+Une fois le dictionnaire généré, il est transmis à la classe \texttt{WeightedMarks}. L'agrégateur prépare les variables de l'équation, mais ne fait jamais l'addition lui-même.
+
+\section{Interactions globales : Synthèse des liaisons}
+
+Le système est conçu pour que les objets d'évaluation (\texttt{Assessment}) et les comportements mathématiques (\texttt{Aggregator}) ne se rencontrent que dans le module \texttt{Exam}.
+
+\subsection{Le point de convergence : \texttt{Exam.java}}
+La classe \texttt{Exam.java} est le conteneur global. Elle lie un identifiant d'étudiant (\texttt{StudentId}) à son arbre de notes (\texttt{AssessmentTree}), et associe l'ensemble des copies à une unique racine d'agrégation (\texttt{Aggregator}).
+
+\subsection{Séquence de liaison et de calcul}
+Le calcul d'une note finale suit une chaîne de dépendance stricte entre les deux dossiers :
+
+\begin{enumerate}
+    \item \textbf{Extraction (\texttt{Assessment} $\rightarrow$ \texttt{Aggregator}) :} Les objets \texttt{Assessment} contenant les instances de \texttt{Mark} sont extraits des dossiers \texttt{CompositeAssessmentTree}. Ils sont convertis en une structure plate nommée \texttt{OneLevelMarksTree} pour annuler la profondeur de l'arbre lors du calcul d'un niveau spécifique.
+    \item \textbf{Distribution des rôles :} Le dictionnaire \texttt{subs} de la classe \texttt{Aggregator} attribue le moteur de calcul approprié à chaque sous-dossier de la copie.
+    \item \textbf{Génération de l'équation :} L'agrégateur sélectionné reçoit le \texttt{OneLevelMarksTree}. Il lit les objets \texttt{Criterion} et leurs valeurs \texttt{Mark}, applique sa logique interne (tri, statique ou conditionnelle) et génère un dictionnaire \texttt{ImmutableMap<Criterion, Double>}.
+    \item \textbf{Validation croisée :} L'objet \texttt{OneLevelMarksTree} (les données) et le dictionnaire de poids (les règles) sont injectés dans \texttt{WeightedMarks}. Ce dernier vérifie formellement que l'ensemble des clés \texttt{Criterion} est identique dans les deux structures.
+    \item \textbf{Résolution :} La méthode \texttt{weightedSum()} est invoquée. Elle extrait la valeur (\texttt{double}) contenue dans \texttt{Mark}, la multiplie par le \texttt{Double} du dictionnaire de poids, incrémente le résultat et retourne la note calculée.
+\end{enumerate}
+
+Les classes du dossier \texttt{assessment} ignorent l'existence des algorithmes, et les classes du dossier \texttt{aggregator} manipulent l'évaluation de l'étudiant via des interfaces génériques sans en modifier les données internes.
+
+\end{document}

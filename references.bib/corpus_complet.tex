@@ -1,0 +1,52 @@
+\documentclass[12pt,a4paper]{article}
+
+% --- Packages de base ---
+\usepackage[utf8]{inputenc}
+\DeclareUnicodeCharacter{2212}{-}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{geometry}
+\usepackage{hyperref}
+
+
+
+% --- Design de la page ---
+\geometry{hmargin=2.5cm,vmargin=2.5cm}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+    citecolor=black,
+}
+
+% --- Informations du document ---
+\title{
+    \vspace{-2cm}
+    \textbf{Corpus Bibliographique Complet}\\
+    \large État de l'art du projet JGRAPA
+}
+\author{\textbf{Charles Baudoux} \\ Université Paris-Dauphine PSL -- L3 MIAGE}
+\date{Juillet 2026}
+
+\begin{document}
+
+\maketitle
+
+\section*{Présentation du corpus}
+Ce document rassemble l'intégralité des références bibliographiques validées pour le projet JGRAPA. Ces articles couvrent l'architecture logicielle, la modélisation en graphe, l'expérience étudiante et les méthodes d'agrégation multicritères. La gestion de ces métadonnées a été automatisée via Zotero.
+
+% --- LA COMMANDE MAGIQUE ---
+% Imprime toutes les entrées du fichier .bib sans avoir besoin de les citer une par une
+\nocite{*}
+
+% --- GENERATION DE LA BIBLIOGRAPHIE ---
+\newpage
+% Le style 'ieeetr' trie par ordre d'apparition (ici l'ordre du .bib) avec des numéros [1], [2]...
+% Si tu préfères un tri alphabétique par auteur, remplace 'ieeetr' par 'plain' ou 'apalike'
+\bibliographystyle{ieeetr} 
+
+% Assure-toi que ton fichier s'appelle bien "references.bib"
+\bibliography{references} 
+
+\end{document}

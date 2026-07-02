@@ -1,0 +1,81 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{amsmath, amsfonts, amssymb}
+\usepackage{geometry}
+\geometry{a4paper, margin=2.5cm}
+\usepackage[colorlinks=true, linkcolor=black, urlcolor=blue]{hyperref}
+\usepackage{titlesec}
+\usepackage{booktabs}
+
+\title{Synthèse de Veille et Recherche Documentaire \\ \large Projets similaires et Analyse comparative du moteur \texttt{JGrapa}}
+\author{Projet JGrapa}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Objectif de la mission}
+Ce document répond à l'objectif de stage suivant : \textit{« Veille et recherche documentaire : Effectuer des recherches d’articles scientifiques et de projets similaires à la bibliothèque JGRAPA, puis en dresser une liste comparative. »} 
+
+Le projet \texttt{JGrapa} (détaillé dans notre document de compréhension) est un moteur de calcul de notes qui sépare strictement les données (l'arbre d'évaluation) de la logique mathématique (les algorithmes). La veille ci-dessous identifie les théories et projets existants qui s'en rapprochent.
+
+\section{Liste des articles et projets similaires étudiés}
+
+Nos recherches ont permis d'identifier plusieurs projets académiques et outils mathématiques qui traitent de l'évaluation hiérarchique et multicritère :
+
+\begin{itemize}
+    \item \textbf{Modélisation en arbre (MCHP / FAHP) :} L'article de Çebi \& Karal (\href{https://eric.ed.gov/?id=EJ1130315}{2017}) structure l'évaluation sous forme d'arborescence (Processus Hiérarchique). Récemment, Narushynska et al. (\href{https://www.mdpi.com/2504-2289/9/3/65}{2025}) explorent également l'amélioration des classifications hiérarchiques dans les modèles basés sur des arbres.
+    \item \textbf{Les algorithmes d'agrégation (OWA et Paramétrique) :} L'article \href{https://ijamjournal.org/ijam/publication/index.php/ijam/article/view/205}{Intuitionistic Fuzzy Rubrics (2025)} valide l'utilisation de l'opérateur OWA pour trier les notes. Les travaux de Ribeiro (\href{https://www.ca3-uninova.org/docs/2003-BJ-EJOR.pdf}{2003}) et Zuliana (\href{https://www.warse.org/IJATCSE/static/pdf/file/ijatcse08942020.pdf}{2020}) justifient les "poids endogènes" (lorsqu'une note devient un coefficient), correspondant à notre algorithme \texttt{Parametric}.
+    \item \textbf{Approches visuelles et interactives :} Le projet d'Asahi et al. (\href{https://pubsonline.informs.org/doi/abs/10.1287/isre.6.4.357}{1995}) propose une interface visuelle interactive (\textit{Treemaps}) pour manipuler les poids d'un arbre de décision, montrant le besoin d'outils informatiques pour gérer cette complexité.
+\end{itemize}
+
+\section{Liste comparative : L'existant vs. \texttt{JGrapa}}
+
+La confrontation entre ces projets de recherche et le code de \texttt{JGrapa} permet de dresser le bilan comparatif suivant :
+
+\vspace{0.5cm}
+\begin{tabular}{p{4.5cm} p{5cm} p{5.5cm}}
+\toprule
+\textbf{Critère de comparaison} & \textbf{Projets de recherche \& Littérature} & \textbf{Bibliothèque JGrapa} \\
+\midrule
+\textbf{Structure de l'arbre} & Hiérarchies figées ou limitées à 3/4 niveaux (ex: matrices FAHP). & Profondeur infinie et dynamique grâce au design pattern \textit{Composite}. \\
+\addlinespace
+\textbf{Lien Arbre / Calcul} & Indissociables. Le calcul est codé en dur pour un arbre précis. & Totalement séparés (Design pattern \textit{Strategy}). On injecte la formule voulue à la volée. \\
+\addlinespace
+\textbf{Opérateur OWA} & Les tableaux de coefficients et de notes doivent avoir la même taille. & Algorithme auto-adaptatif (\textit{Dimension-Adaptive}) qui recalcule les pourcentages s'il manque des notes. \\
+\addlinespace
+\textbf{Interface vs Moteur} & Focus sur l'interface visuelle (Treemaps, Asahi 1995) ou scripts Matlab jetables. & Focus sur un moteur Backend industriel (API Java) prêt à être connecté à n'importe quelle interface. \\
+\addlinespace
+\textbf{Sécurité des calculs} & Faible. Risque d'erreurs mathématiques si l'utilisateur modifie mal les poids. & Haute robustesse. Validation stricte par \textit{Schémas JSON} avant d'autoriser le calcul. \\
+\bottomrule
+\end{tabular}
+\vspace{0.5cm}
+
+\section{Conclusion de la veille}
+L'analyse montre que les formules mathématiques utilisées par \texttt{JGrapa} (OWA, poids dépendants de l'état, arborescences multicritères) existent déjà et sont très étudiées par la science. Cependant, les projets existants manquent d'outils logiciels flexibles. \textbf{L'innovation de JGrapa} ne réside donc pas dans la création de nouvelles mathématiques, mais dans son \textbf{ingénierie logicielle} : il transforme des théories rigides en un moteur Java robuste, immuable et universel.
+
+\begin{table}[h!]
+\centering
+\small
+\begin{tabular}{ll}
+\toprule
+\textbf{Codebase Term (\texttt{JGrapa})} & \textbf{Academic/Theoretical Term} \\
+\midrule
+\texttt{CompositeAssessmentTree} & Hierarchical Criteria Tree / MCHP \\
+\texttt{Mark} (bipolar range $[-1, 1]$) & Signed Utility / Bipolar Evaluation \\
+\texttt{Owa} (with adaptive sizing) & Dimension-adaptive OWA Operator \\
+\texttt{Parametric} Aggregator & Generalized Mixture Operator (TSK Gating) \\
+\texttt{Parametric} weights & State-dependent Weights / Endogenous Weights \\
+\texttt{Aggregator} interface & Non-additive Aggregation Operator \\
+\texttt{JsonSchema} validation & Robustness Framework under Constraints \\
+\texttt{MarksTree} & Criteria Performance Vector \\
+\bottomrule
+\end{tabular}
+\caption{Semantic mapping between \texttt{JGrapa} implementation and MCDA formalisms.}
+\end{table}
+
+\end{document}

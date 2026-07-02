@@ -1,0 +1,234 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+
+% Configuration de l'affichage du code
+% Configuration de l'affichage du code
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  language=Java,
+  keywordstyle=\color{blue},
+  commentstyle=\color{gray},
+  % Ajout de la table de traduction pour les accents
+  literate=
+    {é}{{\'e}}1
+    {è}{{\`e}}1
+    {à}{{\`a}}1
+    {ç}{{\c{c}}}1
+    {ê}{{\^e}}1
+    {â}{{\^a}}1
+    {î}{{\^i}}1
+    {ô}{{\^o}}1
+    {û}{{\^u}}1
+}
+
+\title{Rapport d'Intervention Technique : \\ \large Débogage, Typage et Migration Java 21 du Projet JGrapa}
+\author{Projet JGrapa}
+\date{\today}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Introduction}
+Ce document recense l'intégralité des corrections appliquées au projet logiciel \texttt{JGrapa} afin de le rendre compilable et de stabiliser sa suite de tests. Les problèmes rencontrés étaient principalement liés à la migration vers une version plus stricte de Java (Java 21), entraînant des conflits de typage avec l'objet \texttt{Optional}, des boucles infinies de comparaison, ainsi que des fragilités dans les tests unitaires.
+
+% ==========================================
+\section{1. Configuration du compilateur (Java 21)}
+\textbf{Fichier concerné :} \texttt{pom.xml} (racine du projet), lignes \textasciitilde 14-18.
+
+\paragraph{Problème (Pourquoi ?) :}
+Le compilateur Maven utilisait par défaut une version obsolète de Java (Java 5). Lors de la compilation, des erreurs signalaient que les "patterns in switch statements" n'étaient pas supportés, car cette syntaxe nécessite au minimum Java 21.
+
+\paragraph{Solution :}
+Nous avons forcé Maven à utiliser les versions source et cible de Java 21 via les balises \texttt{<properties>}.
+
+\textbf{Avant :}
+\begin{lstlisting}[language=XML]
+  <properties>
+    <github-repository>${project.name}</github-repository>
+  </properties>
+\end{lstlisting}
+
+\textbf{Après :}
+\begin{lstlisting}[language=XML]
+  <properties>
+    <github-repository>${project.name}</github-repository>
+    <maven.compiler.source>21</maven.compiler.source>
+    <maven.compiler.target>21</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+\end{lstlisting}
+
+
+% ==========================================
+\section{2. Incompatibilité de typage (Optional<Aggregator>)}
+\textbf{Fichiers concernés :} \texttt{Parametric.java} (lignes 83-93) et \texttt{Weighter.java} (lignes 72-80).
+
+\paragraph{Problème (Pourquoi ?) :}
+Suite à une mise à jour d'API parente, les constructeurs de ces classes attendaient un argument de type \texttt{Optional<Aggregator>} pour le sous-agrégateur par défaut (\texttt{defaultSub}). Or, les méthodes de copie \texttt{withSubs} et \texttt{withDefaultSub} transmettaient des objets \texttt{Aggregator} bruts, causant une erreur "incompatible types" à la compilation.
+
+\paragraph{Solution :}
+Envelopper explicitement le retour de la méthode \texttt{defaultSub()} dans un \texttt{Optional.of()}.
+
+\textbf{Avant (\texttt{Parametric.java}) :}
+\begin{lstlisting}
+  @Override
+  public Parametric withSubs(Map<Criterion, Aggregator> newSubs) {
+    return new Parametric(multiplied, weighting, newSubs, defaultSub());
+  }
+\end{lstlisting}
+
+\textbf{Après (\texttt{Parametric.java}) :}
+\begin{lstlisting}
+  @Override
+  public Parametric withSubs(Map<Criterion, Aggregator> newSubs) {
+    return new Parametric(multiplied, weighting, newSubs, Optional.of(defaultSub()));
+  }
+\end{lstlisting}
+\textit{Note : La même modification exacte a été appliquée à la méthode \texttt{withDefaultSub} et dupliquée dans le fichier \texttt{Weighter.java}.}
+
+
+% ==========================================
+\section{3. Erreur de méthode manquante (ifPresent)}
+\textbf{Fichier concerné :} \texttt{AggregatorJsonConverter.java}, lignes 105-108.
+
+\paragraph{Problème (Pourquoi ?) :}
+Le code tentait d'appeler la méthode \texttt{.ifPresent()} sur le retour de \texttt{aggregator.defaultSub()}. Cependant, cette méthode renvoie désormais directement un objet \texttt{Aggregator} (et non plus un \texttt{Optional}), déclenchant l'erreur "cannot find symbol".
+
+\paragraph{Solution :}
+Remplacer la logique conditionnelle de l'Optional par un test d'égalité standard contre l'objet par défaut \texttt{Weighter.FULL\_EQUAL\_WEIGHTER}.
+
+\textbf{Avant :}
+\begin{lstlisting}
+    aggregator.defaultSub().ifPresent(defaultSub -> node.set("defaultSub", toJsonNode(defaultSub)));
+\end{lstlisting}
+
+\textbf{Après :}
+\begin{lstlisting}
+    Aggregator def = aggregator.defaultSub();
+    if (!def.equals(Weighter.FULL_EQUAL_WEIGHTER)) {
+        node.set("defaultSub", toJsonNode(def));
+    }
+\end{lstlisting}
+
+
+% ==========================================
+\section{4. Prévention de la boucle infinie (StackOverflowError)}
+\textbf{Fichiers concernés :} \texttt{Weighter.java} (lignes 86-90), \texttt{Parametric.java}, \texttt{Owa.java}.
+
+\paragraph{Problème (Pourquoi ?) :}
+Lors de l'exécution des tests, une erreur \texttt{StackOverflow} se produisait dans la méthode \texttt{equals()}. L'objet par défaut se comparait à lui-même de manière récursive à l'infini, saturant la pile d'exécution.
+
+\paragraph{Solution :}
+Ajout d'un court-circuit identitaire standard en début de méthode \texttt{equals} (\texttt{this == o2}) pour arrêter immédiatement la comparaison si les deux références pointent vers le même objet en mémoire.
+
+\textbf{Avant (\texttt{Weighter.java}) :}
+\begin{lstlisting}
+  @Override
+  public boolean equals(Object o2) {
+    if (!(o2 instanceof Weighter)) {
+      return false;
+    }
+    // ... comparaison des attributs ...
+  }
+\end{lstlisting}
+
+\textbf{Après (\texttt{Weighter.java}) :}
+\begin{lstlisting}
+  @Override
+  public boolean equals(Object o2) {
+    if (this == o2) return true; // Court-circuit salvateur
+    if (!(o2 instanceof Weighter)) {
+      return false;
+    }
+    // ... comparaison des attributs ...
+  }
+\end{lstlisting}
+\textit{Note : Appliqué également aux méthodes equals des classes \texttt{Parametric} et \texttt{Owa}.}
+
+
+% ==========================================
+\section{5. Sensibilité linguistique des Tests}
+\textbf{Fichier concerné :} \texttt{src/test/java/.../assessment/SchemaTests.java}, lignes 36-39.
+
+\paragraph{Problème (Pourquoi ?) :}
+Le test unitaire validant le schéma JSON échouait sur un environnement d'exécution configuré en anglais (ex: WSL ou CI/CD Linux). Le test s'attendait strictement à un message d'erreur en français ("valeur dans l'énumération"), alors que la JVM renvoyait le message en anglais ("value in the enumeration").
+
+\paragraph{Solution :}
+Assouplissement des assertions pour tolérer les environnements francophones et anglophones en utilisant l'opérateur logique \texttt{||}.
+
+\textbf{Avant :}
+\begin{lstlisting}
+    assertTrue(e0.getMessage().contains("valeur dans l'énumération"), e0.getMessage());
+    Error e1 = errors.get(1);
+    assertTrue(e1.getMessage().contains("array attendu"), e1.getMessage());
+\end{lstlisting}
+
+\textbf{Après :}
+\begin{lstlisting}
+    assertTrue(e0.getMessage().contains("enumeration") || e0.getMessage().contains("énumération"), e0.getMessage());
+    Error e1 = errors.get(1);
+    assertTrue(e1.getMessage().contains("array"), e1.getMessage());
+\end{lstlisting}
+
+
+% ==========================================
+\section{6. Robustesse de la comparaison JSON}
+\textbf{Fichier concerné :} \texttt{src/test/java/.../aggregator/JsonTests.java}, lignes 14 et 65-68.
+
+\paragraph{Problème (Pourquoi ?) :}
+Le test \texttt{testSerializeComplex} validait la sérialisation JSON en comparant des chaînes de caractères brutes (String). Cette approche s'est révélée fragile à cause d'espaces invisibles ou de retours à la ligne discordants entre la sortie générée et le fichier attendu.
+
+\paragraph{Solution :}
+Utilisation de la bibliothèque \texttt{Jackson} (déjà présente dans le projet) pour parser les deux chaînes en \texttt{JsonNode} (arbres de données) et effectuer une comparaison structurelle insensible au formatage. Nous avons dû ajouter l'import de la classe \texttt{ObjectMapper}.
+
+\textbf{Avant :}
+\begin{lstlisting}
+    assertEquals(expected.replaceAll("\\[\n +0.2,\n +0.8\n +\\]", "[ 0.2, 0.8 ]"),
+        converter.toJson(tree).replaceAll(" :", ":").replaceAll("(?m)0\\.0$", "0").replace("{ }", "{}") + "\n");
+\end{lstlisting}
+
+\textbf{Après (incluant le nouvel import en haut de fichier) :}
+\begin{lstlisting}
+import tools.jackson.databind.ObjectMapper; // Nouvel import ligne 14
+// ...
+// Remplacement à la ligne 65
+    String actual = converter.toJson(tree);
+    assertEquals(new ObjectMapper().readTree(expected), new ObjectMapper().readTree(actual));
+\end{lstlisting}
+
+% ==========================================
+\section{7. Typage dans les instanciations de Test}
+\textbf{Fichier concerné :} \texttt{src/test/java/.../aggregator/OwaTests.java}, ligne 61.
+
+\paragraph{Problème (Pourquoi ?) :}
+Le test tentait d'instancier un \texttt{Owa} en passant un \texttt{Optional.empty()} alors que la signature statique \texttt{Owa.given()} exigeait des arguments classiques.
+
+\paragraph{Solution :}
+Simplification de l'appel pour utiliser la signature surchargée la plus simple de \texttt{Owa.given()} qui se charge déjà d'attribuer le bon comportement par défaut.
+
+\textbf{Avant :}
+\begin{lstlisting}
+  private static Owa givenOwa(List<Double> weights) {
+    return Owa.given(weights, ImmutableMap.of(), Optional.empty());
+  }
+\end{lstlisting}
+
+\textbf{Après :}
+\begin{lstlisting}
+  private static Owa givenOwa(List<Double> weights) {
+    return Owa.given(weights);
+  }
+\end{lstlisting}
+
+\end{document}
