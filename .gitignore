@@ -32,3 +32,8 @@ env_recherche/
 Thumbs.db
 ehthumbs.db
 $RECYCLE.BIN/
+
+# =========================
+# Sous-dossiers spécifiques ignorés
+# =========================
+JGrapa/
